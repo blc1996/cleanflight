@@ -208,6 +208,29 @@ void buildRotationMatrix(fp_angles_t *delta, float matrix[3][3])
     matrix[2][Z] = cosy * cosx;
 }
 
+//multiply two matrixs, if the dimension disagree,return 0; otherwise, return the column number of the newly generated matrix
+matrix_t_def matrixMultiplication(int row1, int column1, int row2, int column2,  float mat1[][10], float mat2[][10]){
+    float temp = 0;
+    matrix_t_def result;
+    if(column1 != row2){
+        result.row = 0;
+        result.column = 0;
+    }else{
+        for(int i = 0; i < row1; i++){
+            for(int j = 0; j < column2; j++){
+                temp = 0;
+                for(int k = 0; k < column1; k++){
+                    temp = temp + mat1[i][k] * mat2[k][j];
+                }
+                result.matrix[i][j]=temp;
+            }
+        }
+        result.row = row1;
+        result.column = column2;
+    }
+    return result;
+}
+
 // Rotate a vector *v by the euler angles defined by the 3-vector *delta.
 void rotateV(struct fp_vector *v, fp_angles_t *delta)
 {

@@ -128,7 +128,9 @@ void taskBatteryAlerts(timeUs_t currentTimeUs)
 #ifndef USE_OSD_SLAVE
 static void taskUpdateAccelerometer(timeUs_t currentTimeUs)
 {
+    //static uint8_t sendDat[6]={0};
     accUpdate(currentTimeUs, &accelerometerConfigMutable()->accelerometerTrims);
+    //mspSerialPush(137, sendDat, 6, MSP_DIRECTION_REPLY);
 }
 
 static void taskUpdateRxMain(timeUs_t currentTimeUs)
@@ -216,7 +218,7 @@ void fcTasksInit(void)
 {
     schedulerInit();
     setTaskEnabled(TASK_SERIAL, true);
-    rescheduleTask(TASK_SERIAL, TASK_PERIOD_HZ(serialConfig()->serial_update_rate_hz));
+    rescheduleTask(TASK_SERIAL, TASK_PERIOD_HZ(200));
 
     const bool useBatteryVoltage = batteryConfig()->voltageMeterSource != VOLTAGE_METER_NONE;
     setTaskEnabled(TASK_BATTERY_VOLTAGE, useBatteryVoltage);
@@ -343,10 +345,10 @@ cfTask_t cfTasks[TASK_COUNT] = {
         .taskFunc = taskHandleSerial,
 #ifdef USE_OSD_SLAVE
         .checkFunc = taskSerialCheck,
-        .desiredPeriod = TASK_PERIOD_HZ(100),
+        .desiredPeriod = TASK_PERIOD_HZ(200),
         .staticPriority = TASK_PRIORITY_REALTIME,
 #else
-        .desiredPeriod = TASK_PERIOD_HZ(100),       // 100 Hz should be enough to flush up to 115 bytes @ 115200 baud
+        .desiredPeriod = TASK_PERIOD_HZ(200),       // 100 Hz should be enough to flush up to 115 bytes @ 115200 baud
         .staticPriority = TASK_PRIORITY_LOW,
 #endif
     },

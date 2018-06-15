@@ -28,6 +28,7 @@
 #include "common/axis.h"
 #include "common/maths.h"
 #include "common/filter.h"
+//#include "common/light_matrix.h"
 
 #include "config/config_reset.h"
 #include "pg/pg.h"
@@ -50,6 +51,15 @@
 
 #include "sensors/gyro.h"
 #include "sensors/acceleration.h"
+
+float accErr_I[3] = {0.0f, 0.0f, 0.0f};
+float omegaErr_I[3] = {0.0f, 0.0f, 0.0f};
+
+extern float acceleration_desired[3];
+extern float omega_desired[3];
+
+extern float pidoutMatrix[8];
+extern float jacobian_inv[8][6];
 
 FAST_RAM uint32_t targetPidLooptime;
 static FAST_RAM bool pidStabilisationEnabled;
@@ -411,6 +421,126 @@ static float accelerationLimit(int axis, float currentPidSetpoint)
 
     previousSetpoint[axis] = currentPidSetpoint;
     return currentPidSetpoint;
+}
+
+//omni flight pid controller
+void OmniController(timeUs_t currentTimeUs){
+    static timeUs_t previousTimeUs;
+
+    //calculate the deltaT of each entry
+    const float deltaT = (currentTimeUs - previousTimeUs) * 0.000001f;
+    previousTimeUs = currentTimeUs;
+
+    //dosen't match perfectly with matlab's parameters
+    // static float acc_P = 101.3;
+    // static float acc_I = 12233.6;
+    // static float acc_D = -6.4;
+    // static float omega_P = 1012.6;
+    // static float omega_I = 2667.0;
+    // static float omega_D = 87.7;
+    static float acc_P = 101;
+    static float acc_I = 0;
+    static float acc_D = 0;
+    static float omega_P = 5;
+    static float omega_I = 0;
+    static float omega_D = 0;
+    static uint16_t scale;
+    static float acc_m[3] = {0.0f, 0.0f, 0.0f};
+    static float omega_m[3] = {0.0f, 0.0f, 0.0f};
+    static float accErr_P[3];
+    static float accErr_D[3];
+    static float omegaErr_P[3];
+    static float omegaErr_D[3];
+    static float acceleration_desired_history[3] = {0.0f, 0.0f, 0.0f};
+    static float acc_m_history[3] = {0.0f, 0.0f, 0.0f};
+    static float omega_desired_history[3] = {0.0f, 0.0f, 0.0f};
+    static float omega_m_history[3] = {0.0f, 0.0f, 0.0f};
+    static float pidOut[6] = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+    //static Mat pidOutMatrix;
+    // static Mat accTemp_I;
+    // static Mat omegaTemp_I;
+
+    // //matrixs that store the mesured acc and omega
+    // static Mat acc_m_mix;
+    // static Mat omega_m_mix;
+
+    // //matrixs that store the desired acc and omega read from seriel port
+    // static Mat acc_d_mix;
+    // static Mat omega_d_mix;
+
+    // MatCreate(&acc_m_mix, 3, 1);
+    // MatCreate(&omega_m_mix, 3, 1);
+
+    // MatCreate(&acc_d_mix, 3, 1);
+    // MatCreate(&omega_d_mix, 3, 1);
+    // MatSetVal(&acc_d_mix, acceleration_desired);
+    // MatSetVal(&omega_d_mix, omega_desired);
+
+    // MatCreate(&accTemp_I, 3, 1);
+    // MatCreate(&omegaTemp_I, 3, 1);
+
+    if (acc.dev.acc_1G > 512*4) {
+        scale = 8;
+    } else if (acc.dev.acc_1G > 512*2) {
+        scale = 4;
+    } else if (acc.dev.acc_1G >= 512) {
+        scale = 2;
+    } else {
+        scale = 1;
+    }
+
+    //read the measured acc and gyro data
+    for (int i = 0; i < 3; i++) {
+        acc_m[i] = acc.accADC[i] / (scale * 51.2);
+    }
+    for (int i = 0; i < 3; i++) {
+        omega_m[i] = gyroRateDps(i) * 0.00174532925f;
+    }
+
+    //PID calculation loop
+    for(int i = 0; i < 3; i++){
+        //acc P part
+        accErr_P[i] = acceleration_desired[i] - acc_m[i];
+        //acc I part
+        accErr_I[i] += (acceleration_desired[i] - acc_m[i])*deltaT;
+        //acc D part
+        accErr_D[i] =  (acceleration_desired[i] - acceleration_desired_history[i]) - (acc_m[i] - acc_m_history[i]);
+
+        //omega part
+        omegaErr_P[i] = omega_desired[i] - omega_m[i];
+        omegaErr_I[i] += (omega_desired[i] - omega_m[i]) * deltaT;
+        omegaErr_D[i] =  (omega_desired[i] - omega_desired_history[i]) - (omega_m[i] - omega_m_history[i]);
+    }
+
+    //update the history data for D parts
+    for(int i = 0; i < 3; i++){
+        acceleration_desired_history[i] = acceleration_desired[i];
+        acc_m_history[i] = acc_m[i];
+        omega_desired_history[i] = omega_desired[i];
+        omega_m_history[i] = omega_m[i];
+    }
+
+    //calculate the pid output, prepare for the jacobian transform
+    for(int i = 0; i < 3; i++){
+        pidOut[i] = acc_P * accErr_P[i] + acc_I * accErr_I[i] + acc_D * accErr_D[i];
+    }
+    for(int i = 3; i < 6; i++){
+        pidOut[i] = omega_P * omegaErr_P[i-3] + omega_I * omegaErr_I[i-3] + omega_D * omegaErr_D[i-3];
+    }
+
+     for(int i = 0; i < 8; i++){
+        pidoutMatrix[i] = 0;
+    }
+
+    for(int i = 0; i < 8; i++){
+        for(int j = 0; j < 6; j++){
+            pidoutMatrix[i] += jacobian_inv[i][j] * pidOut[j];
+        }
+    }
+    // MatCreate(&pidOutMatrix, 6, 1);
+    // MatSetVal(&pidOutMatrix, pidOut);
+    // MatMul(&jacobian_inv, &pidOutMatrix, &outMatrix);
+    // //outMatrix is a global variable, can be passed to other functions
 }
 
 // Betaflight pid controller, which will be maintained in the future with additional features specialised for current (mini) multirotor usage.

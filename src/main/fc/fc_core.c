@@ -30,6 +30,7 @@
 #include "common/filter.h"
 #include "common/maths.h"
 #include "common/utils.h"
+//#include "common/light_matrix.h"
 
 #include "config/feature.h"
 #include "pg/pg.h"
@@ -94,6 +95,39 @@ enum {
     ALIGN_ACCEL = 1,
     ALIGN_MAG = 2
 };
+
+/******************************************************
+Generate All the parameters needed for the controller
+******************************************************/
+float k_c, a_c, b_c, c_c, armLen;
+
+// Mat dragDir;
+// Mat X_original;
+// Mat X_m;
+// Mat P_original;
+// Mat P;
+// Mat M_t;
+//Mat jacobian;
+float jacobian_inv[8][6] = {
+        {-0.2958, 0.0792, 0.2165, 0.2991, -1.4534, 0.9537},
+        {0.0792, 0.2958, -0.2165, -1.4534, -0.2991, -0.9537},
+        {0.2958, -0.0792, 0.2165, -0.2991, 1.4534, 0.9537},
+        {-0.0792, -0.2958, -0.2165, 1.4534, 0.2991, -0.9537},
+        {0.2958,  -0.0792, 0.2165, 0.2991, -1.4534, -0.9537},
+        {-0.0792, -0.2958, -0.2165, -1.4534, -0.2991, 0.9537},
+        {-0.2958, 0.0792, 0.2165, -0.2991, 1.4534,  -0.9537},
+        {0.0792, 0.2958, -0.2165, 1.4534, 0.2991,  0.9537}
+    };
+float pidoutMatrix[8];
+// Mat accErr_I;
+// Mat omegaErr_I;
+// Mat acc_P;
+// Mat acc_I;
+// Mat acc_D;
+// Mat omega_P;
+// Mat omega_I;
+// Mat omega_D;
+extern uint32_t lastTranceiverUpdate;
 
 
 #define GYRO_WATCHDOG_DELAY 80 //  delay for gyro sync
@@ -567,7 +601,7 @@ bool processRx(timeUs_t currentTimeUs)
                 && (fabsf(axisPIDSum[FD_PITCH]) < RUNAWAY_TAKEOFF_DEACTIVATE_PIDSUM_LIMIT)
                 && (fabsf(axisPIDSum[FD_ROLL]) < RUNAWAY_TAKEOFF_DEACTIVATE_PIDSUM_LIMIT)
                 && (fabsf(axisPIDSum[FD_YAW]) < RUNAWAY_TAKEOFF_DEACTIVATE_PIDSUM_LIMIT)) {
-                
+
                 inStableFlight = true;
                 if (runawayTakeoffDeactivateUs == 0) {
                     runawayTakeoffDeactivateUs = currentTimeUs;
@@ -779,6 +813,12 @@ bool processRx(timeUs_t currentTimeUs)
     return true;
 }
 
+static void TaskOmniController(timeUs_t currentTimeUs){
+
+    OmniController(currentTimeUs);
+
+}
+
 static void subTaskPidController(timeUs_t currentTimeUs)
 {
     uint32_t startTime = 0;
@@ -918,6 +958,22 @@ static void subTaskMotorUpdate(timeUs_t currentTimeUs)
         startTime = micros();
     }
 
+    if(millis()-lastTranceiverUpdate < 100){
+        //update motor_disarmed
+        for(int i = 0; i < 8; i++){
+            motor_disarmed[i] = pidoutMatrix[i] + 1500;
+            if(motor_disarmed[i] > 2000)
+                motor_disarmed[i] = 2000;
+            else if(motor_disarmed[i] < 1000)
+                motor_disarmed[i] = 1000;
+        }
+    }else{
+        // set motor to minimum
+        for (int i = 0; i < 8; i++) {
+            motor_disarmed[i] = 1500;
+        }
+    }
+
     mixTable(currentTimeUs, currentPidProfile->vbatPidCompensation);
 
 #ifdef USE_SERVOS
@@ -941,6 +997,88 @@ void taskMainPidLoop(timeUs_t currentTimeUs)
     if (lockMainPID() != 0) return;
 #endif
 
+//Set the value of all the parameters needed
+#ifndef PARAMINITIT
+    #define PARAMINITIT
+    k_c = 0.014014; //Drag torque = k_c * Thrust
+    a_c = 0.5 + 1/sqrtf(12);
+    b_c = 0.5 - 1/sqrtf(12);
+    c_c = 1/sqrtf(3);
+    armLen = 0.213; //distance from motor to center of copter
+
+    //matrix needed to store motor command
+    // MatCreate(&outMatrix, 8, 1);
+
+    // float val[]={1, 1, 1, 1, -1, -1, -1, -1};
+    // MatCreate(&dragDir, 1, 8);
+    // MatSetVal(&dragDir, val);
+
+    // float val1[] = {
+    //     -a_c, b_c, c_c,
+    //     b_c, a_c, -c_c,
+    //     a_c, -b_c, c_c,
+    //     -b_c, -a_c, -c_c,
+    //     a_c, -b_c, c_c,
+    //     -b_c, -a_c, -c_c,
+    //     -a_c, b_c, c_c,
+    //     b_c, a_c, -c_c
+    // };
+    // MatCreate(&X_original, 8, 3);
+    // MatCreate(&X_m, 3, 8);
+    // MatSetVal(&X_original, val1);
+    // MatTrans(&X_original, &X_m);
+    // MatDelete(&X_original);
+
+    // float val2[] = {
+    //     1, 1, 1,
+    //     -1, 1, 1,
+    //     -1, -1, 1,
+    //     1, -1, 1,
+    //     1, 1, -1,
+    //     -1, 1, -1,
+    //     -1, -1, -1,
+    //     1, -1, -1
+    // };
+    // MatCreate(&P_original, 8, 3);
+    // MatCreate(&P, 3, 8);
+    // MatSetVal(&P_original, val2);
+    // MatTrans(&P_original, &P);
+    // MatDelete(&P_original);
+    // MatMulCons(&P, armLen/sqrtf(3), &P);
+
+    // MatCreate(&M_t, 3, 8);
+    // float val3[] = {
+    //     0.0340, -0.1650, -0.0340, 0.1650, 0.0340, -0.1650, -0.0340, 0.1650,
+    //     -0.1650, -0.0340, 0.1650, 0.0340, -0.1650, -0.0340, 0.1650, 0.0340,
+    //     0.1331, -0.1331, 0.1331, -0.1331, -0.1331, 0.1331, -0.1331, 0.1331
+    // };
+    // MatSetVal(&M_t, val3);
+
+    // MatCreate(&jacobian, 6, 8);
+    // float val4[] = {
+    //     -a_c, b_c, a_c, -b_c, a_c, -b_c, -a_c, b_c,
+    //     b_c, a_c, -b_c, -a_c, -b_c, -a_c, b_c, a_c,
+    //     c_c, -c_c, c_c, -c_c, c_c, -c_c, c_c, -c_c,
+    //     0.0340, -0.1650, -0.0340, 0.1650, 0.0340, -0.1650, -0.0340, 0.1650,
+    //     -0.1650, -0.0340, 0.1650, 0.0340, -0.1650, -0.0340, 0.1650, 0.0340,
+    //     0.1331, -0.1331, 0.1331, -0.1331, -0.1331, 0.1331, -0.1331, 0.1331
+    // };
+    // MatSetVal(&jacobian, val4);
+
+    // MatCreate(&jacobian_inv, 8, 6);
+    // float val5[] = {
+    //     -0.2958, 0.0792, 0.2165, 0.2991, -1.4534, 0.9537,
+    //     0.0792, 0.2958, -0.2165, -1.4534, -0.2991, -0.9537,
+    //     0.2958, -0.0792, 0.2165, -0.2991, 1.4534, 0.9537,
+    //     -0.0792, -0.2958, -0.2165, 1.4534, 0.2991, -0.9537,
+    //     0.2958,  -0.0792, 0.2165, 0.2991, -1.4534, -0.9537,
+    //     -0.0792, -0.2958, -0.2165, -1.4534, -0.2991, 0.9537,
+    //     -0.2958, 0.0792, 0.2165, -0.2991, 1.4534,  -0.9537,
+    //     0.0792, 0.2958, -0.2165, 1.4534, 0.2991,  0.9537
+    // };
+    // MatSetVal(&jacobian_inv, val5);
+#endif
+
     // DEBUG_PIDLOOP, timings for:
     // 0 - gyroUpdate()
     // 1 - subTaskPidController()
@@ -951,6 +1089,9 @@ void taskMainPidLoop(timeUs_t currentTimeUs)
 
     if (pidUpdateCounter++ % pidConfig()->pid_process_denom == 0) {
         subTaskPidController(currentTimeUs);
+        //the pidtask for omni flight, maybe previous task can be deleted if verified
+        TaskOmniController(currentTimeUs);
+
         subTaskMotorUpdate(currentTimeUs);
         subTaskMainSubprocesses(currentTimeUs);
     }
@@ -960,6 +1101,7 @@ void taskMainPidLoop(timeUs_t currentTimeUs)
         debug[1] = averageSystemLoadPercent;
     }
 }
+
 
 
 bool isFlipOverAfterCrashMode(void)

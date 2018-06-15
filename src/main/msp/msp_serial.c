@@ -25,6 +25,8 @@
 
 #include "common/streambuf.h"
 #include "common/utils.h"
+//#include "common/light_matrix.h"
+//#include "common/light_matrix.c"
 
 #include "drivers/system.h"
 
@@ -35,6 +37,15 @@
 
 #include "msp/msp_serial.h"
 
+#include "sensors/acceleration.h"
+#include "sensors/gyro.h"
+#include "sensors/compass.h"
+
+extern acc_t acc;
+extern mag_t mag;
+extern float acceleration_desired[3];
+extern float omega_desired[3];
+extern float motor_disarmed[8];
 static mspPort_t mspPorts[MAX_MSP_PORT_COUNT];
 
 static void resetMspPort(mspPort_t *mspPortToReset, serialPort_t *serialPort)
@@ -299,6 +310,86 @@ void mspSerialProcess(mspEvaluateNonMspData_e evaluateNonMspData, mspProcessComm
         else {
             mspProcessPendingRequest(mspPort);
         }
+
+        // static float mat1[3][10] = {{1,2},{3,4},{5,6}};
+        // static float mat2[2][10] = {{7,8},{9,10}};
+        static uint8_t sendDat[36]={0};
+        // uint16_t res1 = 0;
+
+        // //int flagRes = 0;
+
+        // matrix_t_def result;
+
+        // result = matrixMultiplication(3, 2, 2, 2, mat1, mat2);
+        // res1 = (uint16_t)result.matrix[0][0];
+
+        // memcpy(&sendDat[0], (uint8_t)&(result.matrix[0][0]), sizeof(result.matrix[0][0]));
+        uint8_t scale;
+        //int16_t testNum[3] = {3, -2, 4};
+        float testNum = 512.2;
+        int16_t tempAcc, tempOmg;
+
+            if (acc.dev.acc_1G > 512*4) {
+                scale = 8;
+            } else if (acc.dev.acc_1G > 512*2) {
+                scale = 4;
+            } else if (acc.dev.acc_1G >= 512) {
+                scale = 2;
+            } else {
+                scale = 1;
+            }
+
+             for (int i = 0; i < 3; i++) {
+                //sbufWriteU16(dst, acc.accADC[i] / scale);
+                tempAcc = acceleration_desired[i];
+                sendDat[2*i] = tempAcc;
+                sendDat[2*i+1] = tempAcc>>8;
+            }
+            // fuck = testNum[0];
+            // fuck1 = testNum[0];
+            //     sendDat[0] = fuck;
+            //     sendDat[1] = (fuck>>8);
+            //     sendDat[2] = (fuck>>16);
+            //     sendDat[3] = (fuck>>24);
+
+
+            // for (int i = 0; i < 3; i++) {
+            //     //sbufWriteU16(dst, acc.accADC[i] / scale);
+            //     sendDat[2*i] = testNum[i];
+            //     sendDat[2*i+1] = (testNum[i])>>8;
+            // }
+            for (int i = 0; i < 3; i++) {
+                //sbufWriteU16(dst, gyroRateDps(i));
+                tempOmg = omega_desired[i];
+                sendDat[6+2*i] = tempOmg;
+                sendDat[6+2*i+1] = tempOmg>>8;
+            }
+            // for (int i = 0; i < 3; i++) {
+            //     //sbufWriteU16(dst, mag.magADC[i]);
+            //     sendDat[12+2*i] = mag.magADC[i];
+            //     sendDat[12+2*i+1] = ((uint16_t)(mag.magADC[i]))>>8;
+            // }
+
+            for(int i = 0; i < 8; i++){
+                sendDat[12+2*i] = motor_disarmed[i];
+                sendDat[12+2*i+1] = ((uint16_t)(motor_disarmed[i]))>>8;
+            }
+
+        // sendDat[2] = (uint32_t)result.matrix[0][0]>>16;
+        // sendDat[3] = (uint32_t)result.matrix[0][0]>>24;
+
+            // for (int i = 0; i < 3; i++) {
+            //     *(&sendDat[0] + i) = *((uint8_t *)&result.matrix[0][0] + i);
+            // }
+
+            // for (int i = 0; i < 3; i++){
+            //     sendDat[2*i]=testDat[i];
+            //     sendDat[2*i+1]=testDat[i]>>8;
+            // }
+        //Mat a_test;
+        //MatCreate(&a_test, 2, 3);
+        mspSerialPush(137, sendDat, 28, MSP_DIRECTION_REPLY);
+
     }
 }
 
@@ -346,7 +437,7 @@ int mspSerialPush(uint8_t cmd, uint8_t *data, int datalen, mspDirection_e direct
         };
 
         ret = mspSerialEncode(mspPort, &push);
-        
+
         // We only want to send the data on the first non-VCP MSP port, to allow users to connect bluetooth devices to other MSP ports
         break;
     }

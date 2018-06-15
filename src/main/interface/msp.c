@@ -159,6 +159,10 @@ typedef enum {
 
 uint8_t escMode;
 uint8_t escPortIndex;
+uint32_t lastTranceiverUpdate = 0;
+
+float acceleration_desired[3] = {0.0f, 0.0f, 0.0f};
+float omega_desired[3] = {0.0f, 0.0f, 0.0f};
 
 #ifdef USE_ESCSERIAL
 static void mspEscPassthroughFn(serialPort_t *serialPort)
@@ -2237,7 +2241,18 @@ mspResult_e mspFcProcessCommand(mspPacket_t *cmd, mspPacket_t *reply, mspPostPro
     // initialize reply by default
     reply->cmd = cmd->cmd;
 
-    if (mspCommonProcessOutCommand(cmdMSP, dst, mspPostProcessFn)) {
+    if(cmdMSP == MSP_OMNI_SEND){
+        //read desired datas
+        for(int i = 0; i < 3; i++){
+            acceleration_desired[i] = ((float)sbufReadU16(src));
+            omega_desired[i] = ((float)sbufReadU16(src));
+        }
+
+        lastTranceiverUpdate = millis();     //Update time MSP_SETMOTOR_GETIMU
+        //don't need to send reply
+        ret = MSP_RESULT_NO_REPLY;
+
+    }else if (mspCommonProcessOutCommand(cmdMSP, dst, mspPostProcessFn)) {
         ret = MSP_RESULT_ACK;
     } else if (mspProcessOutCommand(cmdMSP, dst)) {
         ret = MSP_RESULT_ACK;

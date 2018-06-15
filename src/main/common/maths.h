@@ -53,6 +53,13 @@
 
 typedef int32_t fix12_t;
 
+typedef struct matrix_t
+{
+  int row;
+  int column;
+  float matrix[][10];
+}matrix_t_def;
+
 typedef struct stdev_s
 {
     float m_oldM, m_newM, m_oldS, m_newS;
@@ -100,6 +107,7 @@ void normalizeV(struct fp_vector *src, struct fp_vector *dest);
 
 void rotateV(struct fp_vector *v, fp_angles_t *delta);
 void buildRotationMatrix(fp_angles_t *delta, float matrix[3][3]);
+matrix_t_def matrixMultiplication(int row1, int column1, int row2, int column2, float mat1[][10], float mat2[][10]);
 
 int32_t quickMedianFilter3(int32_t * v);
 int32_t quickMedianFilter5(int32_t * v);
