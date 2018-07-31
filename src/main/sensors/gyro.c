@@ -90,6 +90,10 @@ static FAST_RAM float gyroPrevious[XYZ_AXIS_COUNT];
 static FAST_RAM timeUs_t accumulatedMeasurementTimeUs;
 static FAST_RAM timeUs_t accumulationLastTimeSampledUs;
 
+float gyroRateFlt[3] = {0.0f, 0.0f, 0.0f};
+extern int MaxWinWidth_gyro; // Parameter of my filter
+int WinWidth_gyro=1; // Parameter of my filter
+
 typedef struct gyroCalibration_s {
     int32_t sum[XYZ_AXIS_COUNT];
     stdev_t var[XYZ_AXIS_COUNT];
@@ -1056,6 +1060,7 @@ FAST_CODE void gyroUpdate(timeUs_t currentTimeUs)
     gyro.gyroADCf[X] = gyroSensor1.gyroDev.gyroADCf[X];
     gyro.gyroADCf[Y] = gyroSensor1.gyroDev.gyroADCf[Y];
     gyro.gyroADCf[Z] = gyroSensor1.gyroDev.gyroADCf[Z];
+    gyroRateFilters();
 #endif
 }
 
@@ -1110,4 +1115,20 @@ bool gyroOverflowDetected(void)
 uint16_t gyroAbsRateDps(int axis)
 {
     return fabsf(gyro.gyroADCf[axis]);
+}
+
+void gyroRateFilters(void) // Filter that I used.
+{
+        if (WinWidth_gyro>MaxWinWidth_gyro)
+         {
+            for (int axis = 0; axis < XYZ_AXIS_COUNT; axis++) {
+                gyroRateFlt[axis]=(gyroRateDps(axis)+gyroRateFlt[axis]*MaxWinWidth_gyro-gyroRateFlt[axis])/MaxWinWidth_gyro;
+                }
+         }
+         else{
+             for (int axis = 0; axis < XYZ_AXIS_COUNT; axis++) {
+                 gyroRateFlt[axis]=(gyroRateDps(axis)+gyroRateFlt[axis]*(WinWidth_gyro-1))/WinWidth_gyro;
+                }
+                WinWidth_gyro++;
+         }
 }

@@ -96,6 +96,14 @@ uint16_t sbufReadU16(sbuf_t *src)
     return ret;
 }
 
+int16_t sbufRead16(sbuf_t *src)
+{
+    int16_t ret;
+    ret = sbufReadU8(src);
+    ret |= sbufReadU8(src) << 8;
+    return ret;
+}
+
 uint32_t sbufReadU32(sbuf_t *src)
 {
     uint32_t ret;

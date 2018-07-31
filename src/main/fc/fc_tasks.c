@@ -130,6 +130,7 @@ static void taskUpdateAccelerometer(timeUs_t currentTimeUs)
 {
     //static uint8_t sendDat[6]={0};
     accUpdate(currentTimeUs, &accelerometerConfigMutable()->accelerometerTrims);
+    accFilters();
     //mspSerialPush(137, sendDat, 6, MSP_DIRECTION_REPLY);
 }
 

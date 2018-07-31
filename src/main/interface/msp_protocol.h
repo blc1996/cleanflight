@@ -278,6 +278,7 @@
 #define MSP_ESC_SENSOR_DATA      134    //out message         Extra ESC data from 32-Bit ESCs (Temperature, RPM)
 
 #define MSP_OMNI_SEND            135
+#define MSP_OMNI_PID             136
 
 #define MSP_SET_RAW_RC           200    //in message          8 rc chan
 #define MSP_SET_RAW_GPS          201    //in message          fix, numsat, lat, lon, alt, speed

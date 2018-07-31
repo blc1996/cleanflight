@@ -143,6 +143,7 @@ extern uint8_t __config_end;
 #include "telemetry/frsky_hub.h"
 #include "telemetry/telemetry.h"
 
+//const float acc_I = 14315;
 
 static serialPort_t *cliPort;
 

@@ -80,10 +80,16 @@ extern bool AccInflightCalibrationMeasurementDone;
 extern bool AccInflightCalibrationSavetoEEProm;
 extern bool AccInflightCalibrationActive;
 
+
 static flightDynamicsTrims_t *accelerationTrims;
 
 static uint16_t accLpfCutHz = 0;
 static biquadFilter_t accFilter[XYZ_AXIS_COUNT];
+
+float accFlt[3] = {0.0f, 0.0f, 0.0f};
+extern int MaxWinWidth; // Parameter of my filter
+int WinWidth=1; // Parameter of my filter
+
 
 PG_REGISTER_WITH_RESET_FN(accelerometerConfig_t, accelerometerConfig, PG_ACCELEROMETER_CONFIG, 0);
 
@@ -556,4 +562,38 @@ void accInitFilters(void)
             biquadFilterInitLPF(&accFilter[axis], accLpfCutHz, acc.accSamplingInterval);
         }
     }
+}
+
+float accOut(float accl,float rot_3)
+{
+     uint8_t scale;
+     float acc_out;
+            if (acc.dev.acc_1G > 512*4) {
+                scale = 8;
+            } else if (acc.dev.acc_1G > 512*2) {
+                scale = 4;
+            } else if (acc.dev.acc_1G >= 512) {
+                scale = 2;
+            } else {
+                scale = 1;
+            }
+            acc_out=(accl /(scale*52.2) - 9.81 * rot_3);
+            return acc_out;           
+}
+
+void accFilters(void) // Filter that I used.
+{
+
+        if (WinWidth>MaxWinWidth)
+         {
+            for (int axis = 0; axis < XYZ_AXIS_COUNT; axis++) {
+                accFlt[axis]=(acc.accADC[axis]+accFlt[axis]*MaxWinWidth-accFlt[axis])/MaxWinWidth;
+                }
+         }
+         else{
+             for (int axis = 0; axis < XYZ_AXIS_COUNT; axis++) {
+                accFlt[axis]=(acc.accADC[axis]+accFlt[axis]*(WinWidth-1))/WinWidth;
+                }
+                WinWidth++;
+         }
 }

@@ -55,11 +55,22 @@
 float accErr_I[3] = {0.0f, 0.0f, 0.0f};
 float omegaErr_I[3] = {0.0f, 0.0f, 0.0f};
 
+extern float acc_P;
+extern float acc_I ;
+extern float acc_D;
+extern float omega_P ;
+extern float omega_I ;
+extern float omega_D ;
+extern float accFlt[3];
+extern float gyroRateFlt[3];      
+
 extern float acceleration_desired[3];
 extern float omega_desired[3];
 
 extern float pidoutMatrix[8];
 extern float jacobian_inv[8][6];
+
+extern float rampup_cnt;
 
 FAST_RAM uint32_t targetPidLooptime;
 static FAST_RAM bool pidStabilisationEnabled;
@@ -438,24 +449,27 @@ void OmniController(timeUs_t currentTimeUs){
     // static float omega_P = 1012.6;
     // static float omega_I = 2667.0;
     // static float omega_D = 87.7;
-    static float acc_P = 101;
-    static float acc_I = 0;
-    static float acc_D = 0;
-    static float omega_P = 5;
-    static float omega_I = 0;
-    static float omega_D = 0;
+
     static uint16_t scale;
-    static float acc_m[3] = {0.0f, 0.0f, 0.0f};
-    static float omega_m[3] = {0.0f, 0.0f, 0.0f};
-    static float accErr_P[3];
-    static float accErr_D[3];
-    static float omegaErr_P[3];
-    static float omegaErr_D[3];
+    float acc_m[3] = {0.0f, 0.0f, 0.0f};
+    float omega_m[3] = {0.0f, 0.0f, 0.0f};
+    float accErr_P[3];
+    float accErr_D[3];
+    float omegaErr_P[3];
+    float omegaErr_D[3];
+    float rot_3[3]= {0.0f, 0.0f, 0.0f};
+    // float G[6]= {0.0f, 0.0f, 0.0f};
+    // float g=9.81;
+    // float m=1;
+    // float a=-5.877;
+    // float b=0.0075;
     static float acceleration_desired_history[3] = {0.0f, 0.0f, 0.0f};
     static float acc_m_history[3] = {0.0f, 0.0f, 0.0f};
     static float omega_desired_history[3] = {0.0f, 0.0f, 0.0f};
     static float omega_m_history[3] = {0.0f, 0.0f, 0.0f};
     static float pidOut[6] = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+    static float compensation[6] = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+    static float compensation_PWM[8] = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
     //static Mat pidOutMatrix;
     // static Mat accTemp_I;
     // static Mat omegaTemp_I;
@@ -489,27 +503,42 @@ void OmniController(timeUs_t currentTimeUs){
         scale = 1;
     }
 
+    rot_3[0]=-sin (DECIDEGREES_TO_RADIANS(attitude.values.pitch));
+    rot_3[1]=cos(DECIDEGREES_TO_RADIANS(attitude.values.pitch))*sin(DECIDEGREES_TO_RADIANS(attitude.values.roll));
+    rot_3[2]=cos(DECIDEGREES_TO_RADIANS(attitude.values.pitch))*cos(DECIDEGREES_TO_RADIANS(attitude.values.roll));
     //read the measured acc and gyro data
     for (int i = 0; i < 3; i++) {
-        acc_m[i] = acc.accADC[i] / (scale * 51.2);
+        // acc_m[i] = acc.accADC[i] / (scale * 52.2) - g * rot_3[i];
+        acc_m[i] = accOut(accFlt[i],rot_3[i]);
+
     }
     for (int i = 0; i < 3; i++) {
-        omega_m[i] = gyroRateDps(i) * 0.00174532925f;
+        // omega_m[i] = gyroRateDps(i) * 0.00174532925f;
+        omega_m[i] = gyroRateFlt[i] * 0.00174532925f;
+
     }
 
+
+    for(int i = 0; i < 3; i++){
+        // G[i]=(m/b*a*rot_3[i]*g) * rampup_cnt / 1000;
+        compensation[i]=14.5*rot_3[i] * rampup_cnt / 1000;
+    }
     //PID calculation loop
     for(int i = 0; i < 3; i++){
         //acc P part
         accErr_P[i] = acceleration_desired[i] - acc_m[i];
         //acc I part
         accErr_I[i] += (acceleration_desired[i] - acc_m[i])*deltaT;
+        // accErr_I[i] =0;
         //acc D part
-        accErr_D[i] =  (acceleration_desired[i] - acceleration_desired_history[i]) - (acc_m[i] - acc_m_history[i]);
+        accErr_D[i] = ((acceleration_desired[i] - acceleration_desired_history[i]) - (acc_m[i] - acc_m_history[i]))/deltaT;
 
         //omega part
         omegaErr_P[i] = omega_desired[i] - omega_m[i];
         omegaErr_I[i] += (omega_desired[i] - omega_m[i]) * deltaT;
-        omegaErr_D[i] =  (omega_desired[i] - omega_desired_history[i]) - (omega_m[i] - omega_m_history[i]);
+        // omegaErr_I[i] =0;
+
+        omegaErr_D[i] =  ((omega_desired[i] - omega_desired_history[i]) - (omega_m[i] - omega_m_history[i]))/deltaT;
     }
 
     //update the history data for D parts
@@ -530,12 +559,20 @@ void OmniController(timeUs_t currentTimeUs){
 
      for(int i = 0; i < 8; i++){
         pidoutMatrix[i] = 0;
+        compensation_PWM[i] = 0;
     }
 
     for(int i = 0; i < 8; i++){
         for(int j = 0; j < 6; j++){
             pidoutMatrix[i] += jacobian_inv[i][j] * pidOut[j];
+            compensation_PWM[i] += jacobian_inv[i][j] * compensation[j];
         }
+        if(compensation_PWM[i] > 0){
+            pidoutMatrix[i]= pidoutMatrix[i] + 511.27 * compensation_PWM[i] + 1042 * (float)sqrt(compensation_PWM[i]);
+        }else{
+            pidoutMatrix[i]= pidoutMatrix[i] + 511.27 * compensation_PWM[i] - 1042 * (float)sqrt(-compensation_PWM[i]);
+        }
+        // pidoutMatrix[i]= pidoutMatrix[i]/15.9;
     }
     // MatCreate(&pidOutMatrix, 6, 1);
     // MatSetVal(&pidOutMatrix, pidOut);

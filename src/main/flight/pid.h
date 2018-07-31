@@ -107,6 +107,7 @@ typedef struct pidProfile_s {
     uint16_t itermLimit;
 } pidProfile_t;
 
+
 #ifndef USE_OSD_SLAVE
 PG_DECLARE_ARRAY(pidProfile_t, MAX_PROFILE_COUNT, pidProfiles);
 #endif

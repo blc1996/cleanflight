@@ -99,7 +99,7 @@ enum {
 /******************************************************
 Generate All the parameters needed for the controller
 ******************************************************/
-float k_c, a_c, b_c, c_c, armLen;
+// float k_c, a_c, b_c, c_c, armLen;
 
 // Mat dragDir;
 // Mat X_original;
@@ -129,7 +129,12 @@ float pidoutMatrix[8];
 // Mat omega_D;
 extern uint32_t lastTranceiverUpdate;
 
-
+extern float accErr_I[3];
+extern float omegaErr_I[3];
+extern int WinWidth;          // Parameter of my filter
+extern int WinWidth_gyro;      // Parameter of my filter
+extern float accFlt[3];       //filterd acc
+extern float gyroRateFlt[3];
 #define GYRO_WATCHDOG_DELAY 80 //  delay for gyro sync
 
 #ifdef USE_RUNAWAY_TAKEOFF
@@ -961,7 +966,7 @@ static void subTaskMotorUpdate(timeUs_t currentTimeUs)
     if(millis()-lastTranceiverUpdate < 100){
         //update motor_disarmed
         for(int i = 0; i < 8; i++){
-            motor_disarmed[i] = pidoutMatrix[i] + 1500;
+            motor_disarmed[i] = pidoutMatrix[i] / 15.9 + 1500;
             if(motor_disarmed[i] > 2000)
                 motor_disarmed[i] = 2000;
             else if(motor_disarmed[i] < 1000)
@@ -972,7 +977,16 @@ static void subTaskMotorUpdate(timeUs_t currentTimeUs)
         for (int i = 0; i < 8; i++) {
             motor_disarmed[i] = 1500;
         }
-    }
+        for (int i = 0; i < 3; i++) {
+            accErr_I[i] = 0.0f;
+            omegaErr_I[i]=0.0f;
+            accFlt[i]=0.0f;
+            gyroRateFlt[i]=0.0f;
+        }
+        WinWidth=1; // Restart the filter window
+        WinWidth_gyro=1; // Restart the filter window
+        
+            }
 
     mixTable(currentTimeUs, currentPidProfile->vbatPidCompensation);
 
@@ -1000,11 +1014,11 @@ void taskMainPidLoop(timeUs_t currentTimeUs)
 //Set the value of all the parameters needed
 #ifndef PARAMINITIT
     #define PARAMINITIT
-    k_c = 0.014014; //Drag torque = k_c * Thrust
-    a_c = 0.5 + 1/sqrtf(12);
-    b_c = 0.5 - 1/sqrtf(12);
-    c_c = 1/sqrtf(3);
-    armLen = 0.213; //distance from motor to center of copter
+    // k_c = 0.014014; //Drag torque = k_c * Thrust
+    // a_c = 0.5 + 1/sqrtf(12);
+    // b_c = 0.5 - 1/sqrtf(12);
+    // c_c = 1/sqrtf(3);
+    // armLen = 0.213; //distance from motor to center of copter
 
     //matrix needed to store motor command
     // MatCreate(&outMatrix, 8, 1);
@@ -1088,7 +1102,7 @@ void taskMainPidLoop(timeUs_t currentTimeUs)
     DEBUG_SET(DEBUG_PIDLOOP, 0, micros() - currentTimeUs);
 
     if (pidUpdateCounter++ % pidConfig()->pid_process_denom == 0) {
-        subTaskPidController(currentTimeUs);
+        // subTaskPidController(currentTimeUs);
         //the pidtask for omni flight, maybe previous task can be deleted if verified
         TaskOmniController(currentTimeUs);
 

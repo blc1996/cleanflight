@@ -83,3 +83,6 @@ bool accGetAccumulationAverage(float *accumulation);
 union flightDynamicsTrims_u;
 void setAccelerationTrims(union flightDynamicsTrims_u *accelerationTrimsToUse);
 void accInitFilters(void);
+void accFilters(void);
+float accOut(float accl,float rot_3);
+

@@ -164,6 +164,17 @@ uint32_t lastTranceiverUpdate = 0;
 float acceleration_desired[3] = {0.0f, 0.0f, 0.0f};
 float omega_desired[3] = {0.0f, 0.0f, 0.0f};
 
+float acc_P = 0;
+//const float acc_I = 14315;
+float acc_I = 0;
+float acc_D = 0;
+float omega_P = 0;
+float omega_I = 0;
+float omega_D = 0;
+float rampup_cnt = 0;
+int MaxWinWidth=1000;
+int MaxWinWidth_gyro=1000;
+
 #ifdef USE_ESCSERIAL
 static void mspEscPassthroughFn(serialPort_t *serialPort)
 {
@@ -2240,19 +2251,37 @@ mspResult_e mspFcProcessCommand(mspPacket_t *cmd, mspPacket_t *reply, mspPostPro
     const uint8_t cmdMSP = cmd->cmd;
     // initialize reply by default
     reply->cmd = cmd->cmd;
-
     if(cmdMSP == MSP_OMNI_SEND){
         //read desired datas
         for(int i = 0; i < 3; i++){
-            acceleration_desired[i] = ((float)sbufReadU16(src));
-            omega_desired[i] = ((float)sbufReadU16(src));
+            acceleration_desired[i] = ((float)sbufRead16(src)) / 1000;
         }
-
+        for(int i = 0; i < 3; i++){
+            omega_desired[i] = ((float)sbufRead16(src)) / 1000;
+        }
+        
         lastTranceiverUpdate = millis();     //Update time MSP_SETMOTOR_GETIMU
         //don't need to send reply
         ret = MSP_RESULT_NO_REPLY;
 
-    }else if (mspCommonProcessOutCommand(cmdMSP, dst, mspPostProcessFn)) {
+    }
+    else if(cmdMSP ==MSP_OMNI_PID){
+        acc_P=((float)sbufReadU16(src)) ;
+        acc_I=((float)sbufReadU16(src)) ;
+        acc_D=((float)sbufReadU16(src));
+        omega_P=((float)sbufReadU16(src)) ;
+        omega_I=((float)sbufReadU16(src)) ;
+        omega_D=((float)sbufReadU16(src));
+        rampup_cnt = ((float)sbufReadU16(src));
+        MaxWinWidth=((int)sbufReadU16(src));
+        MaxWinWidth_gyro=((int)sbufReadU16(src));  
+
+        lastTranceiverUpdate = millis();     //Update time MSP_SETMOTOR_GETIMU
+        //don't need to send reply
+        ret = MSP_RESULT_NO_REPLY; 
+    }
+
+    else if (mspCommonProcessOutCommand(cmdMSP, dst, mspPostProcessFn)) {
         ret = MSP_RESULT_ACK;
     } else if (mspProcessOutCommand(cmdMSP, dst)) {
         ret = MSP_RESULT_ACK;

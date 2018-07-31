@@ -18,6 +18,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
+#include <math.h>
 
 #include "platform.h"
 
@@ -25,6 +26,7 @@
 
 #include "common/streambuf.h"
 #include "common/utils.h"
+#include "common/maths.h"
 //#include "common/light_matrix.h"
 //#include "common/light_matrix.c"
 
@@ -35,6 +37,8 @@
 
 #include "io/serial.h"
 
+#include "flight/imu.h"
+
 #include "msp/msp_serial.h"
 
 #include "sensors/acceleration.h"
@@ -43,9 +47,14 @@
 
 extern acc_t acc;
 extern mag_t mag;
-extern float acceleration_desired[3];
-extern float omega_desired[3];
+extern float acc_P;
 extern float motor_disarmed[8];
+extern float acceleration_desired[3];
+extern float accFlt[3];
+extern float gyroRateFlt[3];
+// extern int WinWidth;
+
+extern attitudeEulerAngles_t attitude;
 static mspPort_t mspPorts[MAX_MSP_PORT_COUNT];
 
 static void resetMspPort(mspPort_t *mspPortToReset, serialPort_t *serialPort)
@@ -313,7 +322,7 @@ void mspSerialProcess(mspEvaluateNonMspData_e evaluateNonMspData, mspProcessComm
 
         // static float mat1[3][10] = {{1,2},{3,4},{5,6}};
         // static float mat2[2][10] = {{7,8},{9,10}};
-        static uint8_t sendDat[36]={0};
+        static uint8_t sendDat[40]={0};
         // uint16_t res1 = 0;
 
         // //int flagRes = 0;
@@ -326,8 +335,9 @@ void mspSerialProcess(mspEvaluateNonMspData_e evaluateNonMspData, mspProcessComm
         // memcpy(&sendDat[0], (uint8_t)&(result.matrix[0][0]), sizeof(result.matrix[0][0]));
         uint8_t scale;
         //int16_t testNum[3] = {3, -2, 4};
-        float testNum = 512.2;
-        int16_t tempAcc, tempOmg;
+        //float testNum = 512.2;
+        int16_t tempAcc, tempOmg, temAccFlt, temGyroRateFlt;
+        float rot_3[3]= {0.0f, 0.0f, 0.0f};
 
             if (acc.dev.acc_1G > 512*4) {
                 scale = 8;
@@ -339,11 +349,20 @@ void mspSerialProcess(mspEvaluateNonMspData_e evaluateNonMspData, mspProcessComm
                 scale = 1;
             }
 
+            rot_3[0]=-sin (DECIDEGREES_TO_RADIANS(attitude.values.pitch));
+            rot_3[1]=cos(DECIDEGREES_TO_RADIANS(attitude.values.pitch))*sin(DECIDEGREES_TO_RADIANS(attitude.values.roll));
+            rot_3[2]=cos(DECIDEGREES_TO_RADIANS(attitude.values.pitch))*cos(DECIDEGREES_TO_RADIANS(attitude.values.roll));
+             
              for (int i = 0; i < 3; i++) {
                 //sbufWriteU16(dst, acc.accADC[i] / scale);
-                tempAcc = acceleration_desired[i];
+                tempAcc = 1000 * (acc.accADC[i] /(scale*52.2) - 9.81 * rot_3[i]);
                 sendDat[2*i] = tempAcc;
                 sendDat[2*i+1] = tempAcc>>8;
+
+                temAccFlt=1000*accOut(accFlt[i],rot_3[i]);
+                sendDat[2*i+28] = temAccFlt;
+                sendDat[2*i+1+28] = temAccFlt>>8;
+
             }
             // fuck = testNum[0];
             // fuck1 = testNum[0];
@@ -360,9 +379,13 @@ void mspSerialProcess(mspEvaluateNonMspData_e evaluateNonMspData, mspProcessComm
             // }
             for (int i = 0; i < 3; i++) {
                 //sbufWriteU16(dst, gyroRateDps(i));
-                tempOmg = omega_desired[i];
+                tempOmg = 1000 * gyroRateDps(i)*0.00174532925f;
                 sendDat[6+2*i] = tempOmg;
                 sendDat[6+2*i+1] = tempOmg>>8;
+                temGyroRateFlt=1000 * gyroRateFlt[i]*0.00174532925f;
+                sendDat[34+2*i] = temGyroRateFlt;
+                sendDat[34+2*i+1] = temGyroRateFlt>>8;
+
             }
             // for (int i = 0; i < 3; i++) {
             //     //sbufWriteU16(dst, mag.magADC[i]);
@@ -374,6 +397,40 @@ void mspSerialProcess(mspEvaluateNonMspData_e evaluateNonMspData, mspProcessComm
                 sendDat[12+2*i] = motor_disarmed[i];
                 sendDat[12+2*i+1] = ((uint16_t)(motor_disarmed[i]))>>8;
             }
+            //here 1800 represents 180 degrees
+            // sendDat[28] = attitude.values.roll;
+            // sendDat[29] = attitude.values.roll>>8;
+            // sendDat[30] = attitude.values.pitch;
+            // sendDat[31] = attitude.values.pitch>>8;
+            // sendDat[32] = DECIDEGREES_TO_DEGREES(attitude.values.yaw);
+            // sendDat[33] = DECIDEGREES_TO_DEGREES(attitude.values.yaw)>>8;
+            // sendDat[28] = (int16_t)(10*accFlt[0]);
+            // sendDat[29] = (int16_t)(10*accFlt[0])>>8;
+            // sendDat[30] = (int16_t)(10*accFlt[1]);
+            // sendDat[31] = (int16_t)(10*accFlt[1])>>8;
+            // sendDat[32] = (int16_t)(10*accFlt[2]);
+            // sendDat[33] = (int16_t)(10*accFlt[2])>>8;
+
+            // sendDat[34]=(int16_t)(1000*acceleration_desired[0]);
+            // sendDat[35]=(int16_t)(1000*acceleration_desired[0])>>8;
+            // sendDat[36]=(int16_t)(1000*acceleration_desired[1]);
+            // sendDat[37]=(int16_t)(1000*acceleration_desired[1])>>8;
+            // sendDat[38]=(int16_t)(1000*acceleration_desired[2]);
+            // sendDat[39]=(int16_t)(1000*acceleration_desired[2])>>8;
+
+            // sendDat[40]=(int16_t)(WinWidth);
+            // sendDat[41]=(int16_t)(WinWidth)>>8;
+
+            // sendDat[40]=100*(uint16_t)omega_desired[0];
+            // sendDat[41]=100*(uint16_t)omega_desired[0]>>8;
+            // sendDat[42]=100*(uint16_t)omega_desired[1];
+            // sendDat[43]=100*(uint16_t)omega_desired[1]>>8;
+            // sendDat[44]=100*(uint16_t)omega_desired[2];
+            // sendDat[45]=100*(uint16_t)omega_desired[2]>>8;
+
+
+
+
 
         // sendDat[2] = (uint32_t)result.matrix[0][0]>>16;
         // sendDat[3] = (uint32_t)result.matrix[0][0]>>24;
@@ -388,7 +445,7 @@ void mspSerialProcess(mspEvaluateNonMspData_e evaluateNonMspData, mspProcessComm
             // }
         //Mat a_test;
         //MatCreate(&a_test, 2, 3);
-        mspSerialPush(137, sendDat, 28, MSP_DIRECTION_REPLY);
+        mspSerialPush(137, sendDat, 40, MSP_DIRECTION_REPLY);
 
     }
 }
